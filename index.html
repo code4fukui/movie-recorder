@@ -1,0 +1,187 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="icon" href="data:">
+<title>録画アプリ</title>
+</head>
+<body>
+<body style="margin: 0; height: 100vh; display: flex; flex-direction: column;">
+  <header id="top">
+    <h1>録画アプリ</h1>
+    <select id="cameraSelect"></select>
+    <label><input type="checkbox" id="chkFlip" checked>反転</label>
+    <select id="typeSelect"></select>
+    <button id="startBtn">録画開始</button>
+    <button id="stopBtn" disabled>録画停止</button>
+    <button id="downloadBtn" disabled>ダウンロード</button>
+  </header>
+  <div id="bottom">
+    <video id="video" autoplay playsinline muted></video>
+  </div>
+</div>
+
+<style>
+body {
+  margin: 0;
+  text-align: center;
+  height: 100dvh;
+  overflow: hidden;
+  font-family: sans-serif;
+}
+#top {
+  /* 上部 UI（コントロール類） */
+  padding: 10px;
+  flex: 0 0 auto;
+}
+
+#bottom {
+  /* 残りの高さにピッタリ */
+  flex: 1 1 auto;
+  position: relative;
+  overflow: hidden;
+  padding-bottom: env(safe-area-inset-bottom); /* iOS の下UI避け */
+}
+
+header {
+  padding: .5em;
+}
+h1 {
+  font-size: 100%;
+  display: inline;
+}
+#video {
+  transform: scaleX(-1);
+  x-height: calc(100% - 3em);
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+}
+</style>
+
+<script type="module">
+chkFlip.oninput = () => {
+  video.style.transform = chkFlip.checked ? "scaleX(-1)" : "scaleX(1)";
+};
+
+let mediaRecorder;
+let recordedChunks = [];
+let currentStream;
+
+async function getCameras() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const videoDevices = devices.filter(d => d.kind === "videoinput");
+  cameraSelect.innerHTML = "";
+  videoDevices.forEach(device => {
+    const option = document.createElement("option");
+    option.value = device.deviceId;
+    option.text = device.label || `カメラ ${cameraSelect.length + 1}`;
+    cameraSelect.appendChild(option);
+  });
+}
+
+async function startCamera(deviceId) {
+  if (currentStream) {
+    currentStream.getTracks().forEach(track => track.stop());
+  }
+  const constraints = {
+    video: {
+      deviceId: {
+        exact: deviceId,
+      },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+    },
+    audio: true
+  };
+  currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+  video.srcObject = currentStream;
+}
+
+cameraSelect.onchange = () => {
+  startCamera(cameraSelect.value);
+};
+
+
+startBtn.onclick = () => {
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  cameraSelect.disabled = true;
+  typeSelect.disabled = true;
+
+  //const type = "video/mp4";
+  const type = typeSelect.value;
+  console.log("TYPE", type)
+  const options = { mimeType: type };
+  mediaRecorder = new MediaRecorder(currentStream, options);
+  mediaRecorder.ondataavailable = e => {
+    if (e.data.size > 0) {
+      recordedChunks.push(e.data);
+    }
+  };
+  const getExt = (type) => {
+    const m = type.lastIndexOf(";");
+    if (m >= 0) type = type.substring(0, m);
+    const n = type.lastIndexOf("/");
+    const ext = type.substring(n + 1);
+    console.log(type, ext);
+    return ext;
+  };
+  mediaRecorder.onstop = () => {
+    const blob = new Blob(recordedChunks, { type });
+    recordedChunks = [];
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "recording." + getExt(type);
+    downloadBtn.disabled = false;
+    downloadBtn.onclick = () => {
+      a.click();
+    };
+  };
+  mediaRecorder.start();
+};
+
+stopBtn.onclick = () => {
+  mediaRecorder.stop();
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  cameraSelect.disabled = false;
+  typeSelect.disabled = false;
+};
+
+await getCameras();
+if (cameraSelect.options.length > 0) {
+  await startCamera(cameraSelect.value);
+  await getCameras();
+}
+
+function getSupportedMediaRecorderTypes() {
+  const types = [
+    "video/webm",
+    /*
+    "video/webm;codecs=vp8",
+    "video/webm;codecs=vp9",
+    "video/webm;codecs=vp8,opus",
+    "video/webm;codecs=vp9,opus",
+    */
+    "video/mp4",
+    /*
+    "video/mp4;codecs=avc1",
+    "video/mp4;codecs=avc1.42E01E,mp4a.40.2"
+    */
+  ];
+  return types.filter(type => MediaRecorder.isTypeSupported(type));
+};
+
+const defaulttype = "video/mp4";
+const types = getSupportedMediaRecorderTypes();
+//console.log(types);
+types.forEach(type => {
+  const option = document.createElement("option");
+  option.text = type;
+  typeSelect.appendChild(option);
+  if (type == defaulttype) typeSelect.value = type;
+});
+
+
+</script>
+</body>
+</html>
+
